@@ -43,15 +43,44 @@ impl Snapshot {
     if SNAPSHOTS_LEN.load(storage)?.is_zero() {
       return Ok(None);
     }
-    let idx = SNAPSHOTS_SEQ_NO.load(storage)?.u128();
+    let idx = SNAPSHOTS_SEQ_NO.load(storage)?.u128() - 1;
     Ok(Some((idx, SNAPSHOTS.load(storage, idx)?)))
   }
 
-  pub fn get_latest_index(storage: &mut dyn Storage) -> ContractResult<Option<u128>> {
+  pub fn get_latest_index(
+    storage: &mut dyn Storage,
+    increment: bool,
+  ) -> ContractResult<Option<u128>> {
     if SNAPSHOTS_LEN.load(storage)?.is_zero() {
       return Ok(None);
     }
-    Ok(Some(SNAPSHOTS_SEQ_NO.load(storage)?.u128()))
+    if increment {
+      Ok(Some(
+        SNAPSHOTS_SEQ_NO
+          .update(storage, |x| -> ContractResult<_> { Ok(x + Uint128::one()) })?
+          .u128()
+          - 1,
+      ))
+    } else {
+      Ok(Some(SNAPSHOTS_SEQ_NO.load(storage)?.u128() - 1))
+    }
+  }
+
+  pub fn create(
+    storage: &mut dyn Storage,
+    earnings: Uint128,
+    loss: Uint128,
+  ) -> ContractResult<Self> {
+    let i_snapshot = Self::get_latest_index(storage, true)?.unwrap_or_default();
+    let snapshot = Snapshot {
+      revenue_delegation: NET_REVENUE_DELEGATION.load(storage)?,
+      rewards_delegation: NET_REWARDS_DELEGATION.load(storage)?,
+      earnings,
+      loss,
+    };
+    increment(storage, &SNAPSHOTS_LEN, Uint128::one())?;
+    SNAPSHOTS.save(storage, i_snapshot, &snapshot)?;
+    Ok(snapshot)
   }
 }
 
@@ -118,37 +147,36 @@ impl Account {
     increment(storage, net_delegation_item, delta)?;
 
     let mut amount = delta.clone(); // new total delegation amount for the user
+    let mut i_next_deleg: u128 = 0;
 
     // if no new snapshots have been made since the last time the user updated their delegation
     // simply increment the most recent past delegation created the user instead of creating
     // an entirely new one.
-    if let Some((i_deleg, mut prev_deleg)) = self.get_latest_delegation(storage, target)? {
+    if let Some((i_prev_deleg, mut prev_deleg)) = self.get_latest_delegation(storage, target)? {
       // set the new delegation amount to the previous amount plus the delta
       amount += prev_deleg.amount;
-      if let Some(i_snapshot) = Snapshot::get_latest_index(storage)? {
+      if let Some(i_snapshot) = Snapshot::get_latest_index(storage, false)? {
         if i_snapshot == prev_deleg.i_snapshot.into() {
           prev_deleg.amount = amount;
-          delegations_map.save(storage, (self.owner.clone(), i_deleg), &prev_deleg)?;
+          delegations_map.save(storage, (self.owner.clone(), i_prev_deleg), &prev_deleg)?;
           return Ok(prev_deleg.amount);
         }
       }
+      // since we need to create a new Delegation, calculate its index for use
+      // in its delegations map key:
+      i_next_deleg = i_prev_deleg + 1;
     }
 
     // get the index of the next Snapshot to be made in the future
     let i_snapshot = SNAPSHOTS_SEQ_NO.load(storage)?;
 
-    // increment the delegation sequence number and get its previous value for use
-    // in creating the new Delegation
-    let i_deleg = delegations_seq_no.update(
-      storage,
-      self.owner.clone(),
-      |maybe_seq_no| -> ContractResult<_> { Ok(maybe_seq_no.unwrap_or_default() + 1) },
-    )? - 1;
+    // increment the delegation sequence number
+    delegations_seq_no.save(storage, self.owner.clone(), &i_next_deleg)?;
 
     // insert the new Delegation
     delegations_map.save(
       storage,
-      (self.owner.clone(), i_deleg.into()),
+      (self.owner.clone(), i_next_deleg),
       &Delegation {
         owner: self.owner.clone(),
         amount,
