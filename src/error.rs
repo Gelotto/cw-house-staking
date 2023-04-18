@@ -6,6 +6,9 @@ pub enum ContractError {
   #[error("{0}")]
   Std(#[from] StdError),
 
+  #[error("SnapshotNotFound")]
+  SnapshotNotFound {},
+
   #[error("NotAuthorized")]
   NotAuthorized {},
 

@@ -1,23 +1,37 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::Addr;
+use cosmwasm_std::{Addr, Uint128};
 
 #[cw_serde]
 pub struct InstantiateMsg {}
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  TransferOwnership { new_owner: Addr },
+  Stake { growth: Uint128, profit: Uint128 },
+  TakeProfit {},
+  Withdraw {},
+  Earn { amount: Uint128 },
+  Pay { recipient: Addr, amount: Uint128 },
 }
 
 #[cw_serde]
 pub enum QueryMsg {
-  Select { fields: Option<Vec<String>> },
+  Select {
+    fields: Option<Vec<String>>,
+    wallet: Option<Addr>,
+  },
 }
 
 #[cw_serde]
 pub struct MigrateMsg {}
 
 #[cw_serde]
+pub struct DelegationTotals {
+  pub growth: Uint128,
+  pub profit: Uint128,
+}
+
+#[cw_serde]
 pub struct SelectResponse {
-  pub owner: Option<Addr>,
+  pub liquidity: Option<Uint128>,
+  pub pools: Option<DelegationTotals>,
 }
