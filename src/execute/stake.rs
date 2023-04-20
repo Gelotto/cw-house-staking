@@ -1,19 +1,24 @@
 use crate::{
   models::{Account, ContractResult, DelegationType},
-  state::{NET_LIQUIDITY, SNAPSHOT_TICK},
+  state::{ACCOUNT_MEMOIZATION_QUEUE, GLTO_CW20_CONTRACT_ADDR, NET_LIQUIDITY},
   util::increment,
 };
-use cosmwasm_std::{attr, DepsMut, Env, MessageInfo, Response, Uint128};
+use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Uint128};
+use cw_lib::utils::funds::build_cw20_transfer_from_msg;
 
 pub fn stake(
   deps: DepsMut,
-  _env: Env,
+  env: Env,
   info: MessageInfo,
   growth_delegation: Uint128,
   profit_delegation: Uint128,
 ) -> ContractResult<Response> {
-  let account = Account::get_or_create(deps.storage, &info.sender)?;
+  let (account, is_new_account) = Account::get_or_create(deps.storage, &info.sender)?;
   let mut total_delegation = Uint128::zero();
+
+  if is_new_account {
+    ACCOUNT_MEMOIZATION_QUEUE.push_back(deps.storage, &info.sender)?;
+  }
 
   if !growth_delegation.is_zero() {
     account.stake(
@@ -35,8 +40,22 @@ pub fn stake(
     total_delegation += profit_delegation;
   }
 
-  increment(deps.storage, &NET_LIQUIDITY, total_delegation)?;
-  increment(deps.storage, &SNAPSHOT_TICK, Uint128::one())?;
+  if total_delegation.is_zero() {
+    return Err(crate::error::ContractError::MissingAmount {});
+  }
 
-  Ok(Response::new().add_attributes(vec![attr("action", "stake")]))
+  increment(deps.storage, &NET_LIQUIDITY, total_delegation)?;
+
+  Account::amortize_claim_function(deps.storage, deps.api, 5)?;
+
+  Ok(
+    Response::new()
+      .add_attributes(vec![attr("action", "stake")])
+      .add_submessage(build_cw20_transfer_from_msg(
+        &info.sender,
+        &env.contract.address,
+        &Addr::unchecked(GLTO_CW20_CONTRACT_ADDR),
+        total_delegation,
+      )?),
+  )
 }

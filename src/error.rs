@@ -14,4 +14,7 @@ pub enum ContractError {
 
   #[error("ValidationError")]
   ValidationError {},
+
+  #[error("MissingAmount")]
+  MissingAmount {},
 }

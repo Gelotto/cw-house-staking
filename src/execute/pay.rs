@@ -1,39 +1,38 @@
 use crate::{
-  models::{ContractResult, Snapshot},
-  state::{NET_LIQUIDITY, SNAPSHOTS, SNAPSHOT_TICK},
+  models::{Account, ContractResult, Snapshot},
+  state::{GLTO_CW20_CONTRACT_ADDR, NET_LIQUIDITY},
   util::decrement,
 };
 use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Uint128};
+use cw_lib::utils::funds::build_cw20_transfer_msg;
 
 pub fn pay(
   deps: DepsMut,
   _env: Env,
-  _info: MessageInfo,
+  info: MessageInfo,
   recipient: Addr,
   amount: Uint128,
 ) -> ContractResult<Response> {
-  let did_update: bool =
-    if let Some((i_snapshot, mut snapshot)) = Snapshot::get_latest(deps.storage)? {
-      if snapshot.tick == SNAPSHOT_TICK.load(deps.storage)? {
-        snapshot.outlay += amount;
-        SNAPSHOTS.save(deps.storage, i_snapshot, &snapshot)?;
-        true
-      } else {
-        false
-      }
-    } else {
-      false
-    };
-
-  if !did_update {
-    Snapshot::create(deps.storage, deps.api, Uint128::zero(), amount)?;
+  if amount.is_zero() {
+    return Err(crate::error::ContractError::MissingAmount {});
   }
+
+  Snapshot::create(deps.storage, deps.api, Uint128::zero(), amount)?;
+  Account::amortize_claim_function(deps.storage, deps.api, 5)?;
 
   decrement(deps.storage, &NET_LIQUIDITY, amount)?;
 
-  Ok(Response::new().add_attributes(vec![
-    attr("action", "pay"),
-    attr("amount", amount.to_string()),
-    attr("recipient", recipient.to_string()),
-  ]))
+  Ok(
+    Response::new()
+      .add_attributes(vec![
+        attr("action", "pay"),
+        attr("amount", amount.to_string()),
+        attr("recipient", recipient.to_string()),
+      ])
+      .add_submessage(build_cw20_transfer_msg(
+        &info.sender,
+        &Addr::unchecked(GLTO_CW20_CONTRACT_ADDR),
+        amount,
+      )?),
+  )
 }

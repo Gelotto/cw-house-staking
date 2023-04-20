@@ -1,6 +1,8 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Uint128};
 
+use crate::models::Snapshot;
+
 #[cw_serde]
 pub struct InstantiateMsg {}
 
@@ -33,5 +35,7 @@ pub struct DelegationTotals {
 #[cw_serde]
 pub struct SelectResponse {
   pub liquidity: Option<Uint128>,
+  pub profit: Option<Uint128>,
+  pub snapshots: Option<Vec<Snapshot>>,
   pub pools: Option<DelegationTotals>,
 }

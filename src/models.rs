@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Api, Order, Storage, Uint128};
 use cw_storage_plus::Map;
@@ -5,10 +7,10 @@ use cw_storage_plus::Map;
 use crate::{
   error::ContractError,
   state::{
-    ACCOUNTS, GROWTH_DELEGATIONS, GROWTH_DELEGATIONS_SEQ_NO, GROWTH_DELEGATOR_COUNT,
-    NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS,
-    PROFIT_DELEGATIONS_SEQ_NO, PROFIT_DELEGATOR_COUNT, SNAPSHOTS, SNAPSHOTS_LEN, SNAPSHOTS_SEQ_NO,
-    SNAPSHOT_TICK,
+    ACCOUNTS, ACCOUNT_MEMOIZATION_QUEUE, GROWTH_DELEGATIONS, GROWTH_DELEGATIONS_SEQ_NO,
+    GROWTH_DELEGATOR_COUNT, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
+    NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO, PROFIT_DELEGATOR_COUNT,
+    SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN,
   },
   util::{decrement, increment, log},
 };
@@ -24,11 +26,13 @@ pub enum DelegationType {
 #[cw_serde]
 pub struct Account {
   pub owner: Addr,
+  pub memoized_profit: Uint128,
+  pub memoized_gain: Uint128,
+  pub memoized_loss: Uint128,
 }
 
 #[cw_serde]
 pub struct Snapshot {
-  pub tick: Uint128,
   pub claims_remaining: u32,
   pub growth_delegation: Uint128,
   pub profit_delegation: Uint128,
@@ -48,12 +52,12 @@ impl Snapshot {
     if SNAPSHOTS_LEN.load(storage)?.is_zero() {
       return Ok(None);
     }
-    let idx = SNAPSHOTS_SEQ_NO.load(storage)?.u128() - 1;
+    let idx = SNAPSHOTS_INDEX.load(storage)?.u128() - 1;
     Ok(Some((idx, SNAPSHOTS.load(storage, idx)?)))
   }
 
   pub fn get_next_index(storage: &mut dyn Storage) -> ContractResult<u128> {
-    Ok(SNAPSHOTS_SEQ_NO.load(storage)?.u128())
+    Ok(SNAPSHOTS_INDEX.load(storage)?.u128())
   }
   pub fn get_count(storage: &mut dyn Storage) -> ContractResult<u128> {
     Ok(SNAPSHOTS_LEN.load(storage)?.u128())
@@ -61,7 +65,7 @@ impl Snapshot {
 
   pub fn get_next_index_and_increment(storage: &mut dyn Storage) -> ContractResult<u128> {
     Ok(
-      SNAPSHOTS_SEQ_NO
+      SNAPSHOTS_INDEX
         .update(storage, |x| -> ContractResult<_> { Ok(x + Uint128::one()) })?
         .u128()
         - 1,
@@ -92,7 +96,6 @@ impl Snapshot {
       ),
     );
     let snapshot = Snapshot {
-      tick: SNAPSHOT_TICK.load(storage)?,
       claims_remaining,
       growth_delegation,
       profit_delegation,
@@ -108,23 +111,33 @@ impl Snapshot {
 impl Delegation {}
 
 impl Account {
+  pub fn new(owner: &Addr) -> Self {
+    Self {
+      owner: owner.clone(),
+      memoized_gain: Uint128::zero(),
+      memoized_loss: Uint128::zero(),
+      memoized_profit: Uint128::zero(),
+    }
+  }
+
   pub fn get_or_create(
     storage: &mut dyn Storage,
     owner: &Addr,
-  ) -> ContractResult<Self> {
-    ACCOUNTS.update(
+  ) -> ContractResult<(Self, bool)> {
+    let mut is_new_account = false;
+    let account = ACCOUNTS.update(
       storage,
       owner.clone(),
       |maybe_account| -> ContractResult<_> {
         if let Some(account) = maybe_account {
           Ok(account)
         } else {
-          Ok(Account {
-            owner: owner.clone(),
-          })
+          is_new_account = true;
+          Ok(Account::new(owner))
         }
       },
-    )
+    )?;
+    Ok((account, is_new_account))
   }
 
   pub fn has_delegation(
@@ -241,13 +254,20 @@ impl Account {
   }
 
   pub fn take_profit(
-    &self,
+    &mut self,
     storage: &mut dyn Storage,
     api: &dyn Api,
   ) -> ContractResult<Uint128> {
-    let balance = self.process(storage, api, DelegationType::Profit)?.0;
-    increment(storage, &SNAPSHOT_TICK, Uint128::one())?;
-    Ok(balance)
+    let mut amount = self.claim(storage, api, DelegationType::Profit)?.0 + self.memoized_profit;
+    self.memoized_profit = Uint128::zero();
+    if !amount.is_zero() {
+      NET_PROFIT.update(storage, |x| -> ContractResult<_> {
+        amount = x.min(amount);
+        Ok(x - amount)
+      })?;
+    }
+    ACCOUNTS.save(storage, self.owner.clone(), &self)?;
+    Ok(amount)
   }
 
   pub fn withdraw(
@@ -256,15 +276,11 @@ impl Account {
     api: &dyn Api,
   ) -> ContractResult<Uint128> {
     // decrement delegator counts
-    if let Some(account) = ACCOUNTS.may_load(storage, self.owner.clone())? {
-      if account.has_delegation(storage, DelegationType::Growth)? {
-        decrement(storage, &GROWTH_DELEGATOR_COUNT, 1)?;
-      }
-      if account.has_delegation(storage, DelegationType::Profit)? {
-        decrement(storage, &PROFIT_DELEGATOR_COUNT, 1)?;
-      }
-    } else {
-      return Ok(Uint128::zero());
+    if self.has_delegation(storage, DelegationType::Growth)? {
+      decrement(storage, &GROWTH_DELEGATOR_COUNT, 1)?;
+    }
+    if self.has_delegation(storage, DelegationType::Profit)? {
+      decrement(storage, &PROFIT_DELEGATOR_COUNT, 1)?;
     }
 
     // compute the total amount delegated by the user
@@ -278,7 +294,7 @@ impl Account {
     );
 
     // compute user's total gain and loss in their share of the pool's overall liquidity
-    let (x_gain, x_loss) = self.process(storage, api, DelegationType::Growth)?;
+    let (x_gain, x_loss) = self.claim(storage, api, DelegationType::Growth)?;
 
     log(
       api,
@@ -287,19 +303,43 @@ impl Account {
     );
 
     // compute any unclaimed profit hanging around for the user
-    let x_profit = self.process(storage, api, DelegationType::Profit)?.0;
+    let mut profit_delta =
+      self.claim(storage, api, DelegationType::Profit)?.0 + self.memoized_profit;
 
     log(
       api,
       "account::withdraw",
       format!(
         "x_deleg_growth: {}, x_deleg_profit: {}, x_gain: {}, x_loss: {}",
-        x_deleg_growth, x_deleg_profit, x_gain, x_loss
+        x_deleg_growth,
+        x_deleg_profit,
+        x_gain + self.memoized_gain,
+        x_loss + self.memoized_loss
       ),
     );
 
     // compute amount to subtract from global liquidity amount
-    let dx_liquidity = (x_delegation + x_gain) - x_loss;
+    let mut liquidity_delta =
+      (x_delegation + x_gain + self.memoized_gain) - (x_loss + self.memoized_loss);
+
+    let mut balance = (x_delegation + x_gain + self.memoized_gain) - (x_loss + self.memoized_loss);
+
+    log(
+      api,
+      "account::withdraw",
+      format!(
+        "decrementing profit {} by {}",
+        NET_PROFIT.load(storage)?.u128(),
+        profit_delta.u128()
+      ),
+    );
+
+    NET_PROFIT.update(storage, |net_profit| -> ContractResult<_> {
+      profit_delta = profit_delta.min(net_profit);
+      Ok(net_profit - profit_delta)
+    })?;
+
+    balance += profit_delta;
 
     log(
       api,
@@ -307,12 +347,17 @@ impl Account {
       format!(
         "decrementing liqudity {} by {}",
         NET_LIQUIDITY.load(storage)?.u128(),
-        dx_liquidity.u128()
+        liquidity_delta.u128()
       ),
     );
 
-    NET_LIQUIDITY.update(storage, |x| -> ContractResult<_> {
-      Ok(x - x.min(dx_liquidity))
+    NET_LIQUIDITY.update(storage, |net_liquidity| -> ContractResult<_> {
+      if liquidity_delta > net_liquidity {
+        let overflow_amount = liquidity_delta - net_liquidity;
+        liquidity_delta -= overflow_amount;
+        balance -= overflow_amount;
+      }
+      Ok(net_liquidity - liquidity_delta)
     })?;
 
     log(
@@ -344,7 +389,6 @@ impl Account {
     self.remove_delegations(storage, DelegationType::Profit);
 
     // balance is the total withdrawn amount
-    let balance = (x_delegation + x_gain + x_profit) - x_loss;
 
     Ok(balance)
   }
@@ -390,7 +434,7 @@ impl Account {
     ))
   }
 
-  fn process(
+  fn claim(
     &self,
     storage: &mut dyn Storage,
     api: &dyn Api,
@@ -406,13 +450,12 @@ impl Account {
     log(
       api,
       "account::process",
-      format!("processing {:?} {} delegations", target, delegations.len()),
-    );
-
-    log(
-      api,
-      "account::process",
-      format!("snapshot count: {}", SNAPSHOTS_LEN.load(storage)?),
+      format!(
+        "processing {:?} {} delegations with {} snapshots",
+        target,
+        delegations.len(),
+        SNAPSHOTS_LEN.load(storage)?
+      ),
     );
 
     if delegations.is_empty() {
@@ -496,7 +539,7 @@ impl Account {
     let d1_snapshot_index = if let Some(d1) = maybe_d1 {
       d1.i_snapshot.u128()
     } else {
-      SNAPSHOTS_SEQ_NO.load(storage)?.u128() + 1
+      SNAPSHOTS_INDEX.load(storage)?.u128() + 1
     };
 
     let mut stale_snapshot_indices: Vec<u128> = vec![];
@@ -538,9 +581,7 @@ impl Account {
               format!("processing snapshot {} for profit delegation", i_snapshot),
             );
 
-            total_gain += s
-              .income
-              .multiply_ratio(d0.amount, s.profit_delegation + s.growth_delegation);
+            total_gain += s.income.multiply_ratio(d0.amount, s.get_total_delegation());
 
             s.claims_remaining -= 1;
             if s.claims_remaining == 0 {
@@ -569,5 +610,55 @@ impl Account {
     }
 
     Ok(amounts)
+  }
+
+  pub fn memoize_claim_amounts(
+    &mut self,
+    storage: &mut dyn Storage,
+    api: &dyn Api,
+  ) -> ContractResult<()> {
+    let (gain, loss) = self.claim(storage, api, DelegationType::Growth)?;
+    let profit = self.claim(storage, api, DelegationType::Profit)?.0;
+
+    log(
+      api,
+      "ACCOUNT::MEMOIZE_CLAIM_AMOUNTS",
+      format!("memoizing gain={}, loss={}, profit={}", gain, loss, profit),
+    );
+
+    self.memoized_gain += gain;
+    self.memoized_loss += loss;
+    self.memoized_profit += profit;
+
+    ACCOUNTS.save(storage, self.owner.clone(), self)?;
+    Ok(())
+  }
+
+  pub fn amortize_claim_function(
+    storage: &mut dyn Storage,
+    api: &dyn Api,
+    count: u32,
+  ) -> ContractResult<()> {
+    let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
+    for _i in 0..count {
+      for _retry in 0..5 {
+        if let Some(owner) = ACCOUNT_MEMOIZATION_QUEUE.pop_front(storage)? {
+          if visited.contains(&owner) {
+            // already amorized all existing accounts
+            return Ok(());
+          }
+          if let Some(mut account) = ACCOUNTS.may_load(storage, owner.clone())? {
+            account.memoize_claim_amounts(storage, api)?;
+            visited.insert(owner.clone());
+            ACCOUNT_MEMOIZATION_QUEUE.push_back(storage, &owner)?;
+            ACCOUNTS.save(storage, owner.clone(), &account)?;
+          }
+        } else {
+          // queue is empty
+          break;
+        }
+      }
+    }
+    Ok(())
   }
 }

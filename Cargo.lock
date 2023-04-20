@@ -206,6 +206,7 @@ version = "0.0.1"
 dependencies = [
  "cosmwasm-schema",
  "cosmwasm-std",
+ "cw-lib",
  "cw-multi-test",
  "cw-storage-plus",
  "cw-utils",
