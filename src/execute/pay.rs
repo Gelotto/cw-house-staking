@@ -17,7 +17,7 @@ pub fn pay(
     return Err(crate::error::ContractError::MissingAmount {});
   }
 
-  Snapshot::create(deps.storage, deps.api, Uint128::zero(), amount)?;
+  Snapshot::upsert(deps.storage, deps.api, Uint128::zero(), amount)?;
   Account::amortize_claim_function(deps.storage, deps.api, 5)?;
 
   decrement(deps.storage, &NET_LIQUIDITY, amount)?;

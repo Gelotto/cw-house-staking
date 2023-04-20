@@ -33,17 +33,13 @@ pub fn earn(
     increment(deps.storage, &NET_LIQUIDITY, growth_delta)?;
   }
 
-  let profit_delta = if !net_delegation.is_zero() {
-    income.multiply_ratio(net_profit_delegation, net_delegation)
-  } else {
-    income
-  };
+  let profit_delta = income - growth_delta;
 
   if !profit_delta.is_zero() {
     increment(deps.storage, &NET_PROFIT, profit_delta)?;
   }
 
-  Snapshot::create(deps.storage, deps.api, income, Uint128::zero())?;
+  Snapshot::upsert(deps.storage, deps.api, income, Uint128::zero())?;
   Account::amortize_claim_function(deps.storage, deps.api, 5)?;
 
   Ok(

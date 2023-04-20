@@ -7,10 +7,10 @@ use cw_storage_plus::Map;
 use crate::{
   error::ContractError,
   state::{
-    ACCOUNTS, ACCOUNT_MEMOIZATION_QUEUE, GROWTH_DELEGATIONS, GROWTH_DELEGATIONS_SEQ_NO,
-    GROWTH_DELEGATOR_COUNT, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
-    NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO, PROFIT_DELEGATOR_COUNT,
-    SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN,
+    ACCOUNTS, ACCOUNTS_LEN, ACCOUNT_MEMOIZATION_QUEUE, GROWTH_DELEGATIONS,
+    GROWTH_DELEGATIONS_SEQ_NO, GROWTH_DELEGATOR_COUNT, NET_GROWTH_DELEGATION, NET_LIQUIDITY,
+    NET_PROFIT, NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO,
+    PROFIT_DELEGATOR_COUNT, SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN, SNAPSHOT_SEQ_NO,
   },
   util::{decrement, increment, log},
 };
@@ -33,6 +33,7 @@ pub struct Account {
 
 #[cw_serde]
 pub struct Snapshot {
+  pub seq_no: Uint128,
   pub claims_remaining: u32,
   pub growth_delegation: Uint128,
   pub profit_delegation: Uint128,
@@ -76,17 +77,29 @@ impl Snapshot {
     self.growth_delegation + self.profit_delegation
   }
 
-  pub fn create(
+  pub fn upsert(
     storage: &mut dyn Storage,
     api: &dyn Api,
     income: Uint128,
     outlay: Uint128,
   ) -> ContractResult<Self> {
-    let i_snapshot = Self::get_next_index_and_increment(storage)?;
     let growth_delegation = NET_GROWTH_DELEGATION.load(storage)?;
     let profit_delegation = NET_PROFIT_DELEGATION.load(storage)?;
+    let seq_no = SNAPSHOT_SEQ_NO.load(storage)?;
     let claims_remaining =
       GROWTH_DELEGATOR_COUNT.load(storage)? + PROFIT_DELEGATOR_COUNT.load(storage)?;
+
+    if let Some((i_prev_snapshot, mut prev_snapshot)) = Self::get_latest(storage)? {
+      if prev_snapshot.seq_no == seq_no {
+        prev_snapshot.income += income;
+        prev_snapshot.outlay += outlay;
+        SNAPSHOTS.save(storage, i_prev_snapshot, &prev_snapshot)?;
+        return Ok(prev_snapshot);
+      }
+    }
+
+    let i_snapshot = Self::get_next_index_and_increment(storage)?;
+
     log(
       api,
       "snapshot::create",
@@ -95,15 +108,22 @@ impl Snapshot {
         i_snapshot, claims_remaining
       ),
     );
+
+    // if we didn't just end up updating the previous snapshot,
+    // we create and return a new one...
     let snapshot = Snapshot {
+      seq_no,
       claims_remaining,
       growth_delegation,
       profit_delegation,
       income,
       outlay,
     };
-    increment(storage, &SNAPSHOTS_LEN, Uint128::one())?;
+
     SNAPSHOTS.save(storage, i_snapshot, &snapshot)?;
+
+    increment(storage, &SNAPSHOTS_LEN, Uint128::one())?;
+
     Ok(snapshot)
   }
 }
@@ -137,7 +157,14 @@ impl Account {
         }
       },
     )?;
+    if is_new_account {
+      increment(storage, &ACCOUNTS_LEN, Uint128::one())?;
+    }
     Ok((account, is_new_account))
+  }
+
+  pub fn get_count(storage: &dyn Storage) -> ContractResult<Uint128> {
+    Ok(ACCOUNTS_LEN.load(storage)?)
   }
 
   pub fn has_delegation(
@@ -195,6 +222,7 @@ impl Account {
       };
 
     increment(storage, net_delegation_item, delta)?;
+    increment(storage, &SNAPSHOT_SEQ_NO, Uint128::one())?;
 
     let mut amount = delta.clone(); // new total delegation amount for the user
     let mut i_next_deleg: u128 = 0;
@@ -258,15 +286,22 @@ impl Account {
     storage: &mut dyn Storage,
     api: &dyn Api,
   ) -> ContractResult<Uint128> {
-    let mut amount = self.claim(storage, api, DelegationType::Profit)?.0 + self.memoized_profit;
+    let mut amount =
+      self.claim(storage, api, DelegationType::Profit, false)?.0 + self.memoized_profit;
+
     self.memoized_profit = Uint128::zero();
+
     if !amount.is_zero() {
       NET_PROFIT.update(storage, |x| -> ContractResult<_> {
         amount = x.min(amount);
         Ok(x - amount)
       })?;
     }
+
+    increment(storage, &SNAPSHOT_SEQ_NO, Uint128::one())?;
+
     ACCOUNTS.save(storage, self.owner.clone(), &self)?;
+
     Ok(amount)
   }
 
@@ -283,6 +318,8 @@ impl Account {
       decrement(storage, &PROFIT_DELEGATOR_COUNT, 1)?;
     }
 
+    increment(storage, &SNAPSHOT_SEQ_NO, Uint128::one())?;
+
     // compute the total amount delegated by the user
     let (x_deleg_growth, x_deleg_profit) = self.get_delegation_amounts(storage)?;
     let x_delegation = x_deleg_growth + x_deleg_profit;
@@ -294,7 +331,7 @@ impl Account {
     );
 
     // compute user's total gain and loss in their share of the pool's overall liquidity
-    let (x_gain, x_loss) = self.claim(storage, api, DelegationType::Growth)?;
+    let (x_gain, x_loss) = self.claim(storage, api, DelegationType::Growth, false)?;
 
     log(
       api,
@@ -304,7 +341,7 @@ impl Account {
 
     // compute any unclaimed profit hanging around for the user
     let mut profit_delta =
-      self.claim(storage, api, DelegationType::Profit)?.0 + self.memoized_profit;
+      self.claim(storage, api, DelegationType::Profit, false)?.0 + self.memoized_profit;
 
     log(
       api,
@@ -388,8 +425,6 @@ impl Account {
     self.remove_delegations(storage, DelegationType::Growth);
     self.remove_delegations(storage, DelegationType::Profit);
 
-    // balance is the total withdrawn amount
-
     Ok(balance)
   }
 
@@ -439,6 +474,7 @@ impl Account {
     storage: &mut dyn Storage,
     api: &dyn Api,
     target: DelegationType,
+    is_amortizing: bool,
   ) -> ContractResult<(Uint128, Uint128)> {
     let delegations_map = match target {
       DelegationType::Growth => &GROWTH_DELEGATIONS,
@@ -487,28 +523,30 @@ impl Account {
       }
     }
 
-    if let Some((d0_index, d0)) = delegations.last() {
-      log(
-        api,
-        "account::process",
-        format!(
-          "final delegation index {}, snapshot index: {}",
-          d0_index, d0.i_snapshot
-        ),
-      );
-      let (gain, loss) = self.process_delegation(storage, api, target.clone(), d0, None)?;
-      total_gain += gain;
-      total_loss += loss;
-      let i_next_snapshot = Snapshot::get_next_index(storage)?;
-      delegations_map.update(
-        storage,
-        (self.owner.clone(), *d0_index),
-        |maybe_d0| -> ContractResult<_> {
-          let mut d0 = maybe_d0.unwrap();
-          d0.i_snapshot = Uint128::from(i_next_snapshot);
-          Ok(d0)
-        },
-      )?;
+    if !is_amortizing {
+      if let Some((d0_index, d0)) = delegations.last() {
+        log(
+          api,
+          "account::process",
+          format!(
+            "final delegation index {}, snapshot index: {}",
+            d0_index, d0.i_snapshot
+          ),
+        );
+        let (gain, loss) = self.process_delegation(storage, api, target.clone(), d0, None)?;
+        total_gain += gain;
+        total_loss += loss;
+        let i_next_snapshot = Snapshot::get_next_index(storage)?;
+        delegations_map.update(
+          storage,
+          (self.owner.clone(), *d0_index),
+          |maybe_d0| -> ContractResult<_> {
+            let mut d0 = maybe_d0.unwrap();
+            d0.i_snapshot = Uint128::from(i_next_snapshot);
+            Ok(d0)
+          },
+        )?;
+      }
     }
 
     Ok((total_gain, total_loss))
@@ -617,8 +655,8 @@ impl Account {
     storage: &mut dyn Storage,
     api: &dyn Api,
   ) -> ContractResult<()> {
-    let (gain, loss) = self.claim(storage, api, DelegationType::Growth)?;
-    let profit = self.claim(storage, api, DelegationType::Profit)?.0;
+    let (gain, loss) = self.claim(storage, api, DelegationType::Growth, true)?;
+    let profit = self.claim(storage, api, DelegationType::Profit, true)?.0;
 
     log(
       api,
@@ -645,6 +683,7 @@ impl Account {
         if let Some(owner) = ACCOUNT_MEMOIZATION_QUEUE.pop_front(storage)? {
           if visited.contains(&owner) {
             // already amorized all existing accounts
+            ACCOUNT_MEMOIZATION_QUEUE.push_front(storage, &owner)?;
             return Ok(());
           }
           if let Some(mut account) = ACCOUNTS.may_load(storage, owner.clone())? {

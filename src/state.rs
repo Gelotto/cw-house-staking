@@ -29,6 +29,7 @@ pub const PROFIT_DELEGATIONS_SEQ_NO: Map<Addr, u128> = Map::new("profit_delegati
 pub const PROFIT_DELEGATIONS: Map<(Addr, u128), Delegation> = Map::new("profit_delegations");
 
 pub const ACCOUNTS: Map<Addr, Account> = Map::new("accounts");
+pub const ACCOUNTS_LEN: Item<Uint128> = Item::new("accounts_len");
 pub const ACCOUNT_MEMOIZATION_QUEUE: Deque<Addr> = Deque::new("account_memoization_queue");
 
 /// Initialize contract state data.
@@ -42,6 +43,7 @@ pub fn initialize(
   NET_PROFIT_DELEGATION.save(deps.storage, &Uint128::zero())?;
   NET_LIQUIDITY.save(deps.storage, &Uint128::zero())?;
   NET_PROFIT.save(deps.storage, &Uint128::zero())?;
+  ACCOUNTS_LEN.save(deps.storage, &Uint128::zero())?;
   SNAPSHOTS_LEN.save(deps.storage, &Uint128::zero())?;
   SNAPSHOTS_INDEX.save(deps.storage, &Uint128::zero())?;
   SNAPSHOT_SEQ_NO.save(deps.storage, &Uint128::zero())?;

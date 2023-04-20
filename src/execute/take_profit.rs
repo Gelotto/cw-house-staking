@@ -1,6 +1,6 @@
 use crate::{
-  models::ContractResult,
-  state::{ACCOUNTS, GLTO_CW20_CONTRACT_ADDR},
+  models::{Account, ContractResult},
+  state::{ACCOUNTS, GLTO_CW20_CONTRACT_ADDR, NET_PROFIT},
 };
 use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw_lib::utils::funds::build_cw20_transfer_msg;
@@ -10,11 +10,19 @@ pub fn take_profit(
   _env: Env,
   info: MessageInfo,
 ) -> ContractResult<Response> {
-  let profit = if let Some(mut account) = ACCOUNTS.may_load(deps.storage, info.sender.clone())? {
-    account.take_profit(deps.storage, deps.api)?
-  } else {
-    Uint128::zero()
-  };
+  let mut profit =
+    if let Some(mut account) = ACCOUNTS.may_load(deps.storage, info.sender.clone())? {
+      account.take_profit(deps.storage, deps.api)?
+    } else {
+      Uint128::zero()
+    };
+
+  if Account::get_count(deps.storage)? == Uint128::one() {
+    NET_PROFIT.update(deps.storage, |dust| -> ContractResult<_> {
+      profit += dust;
+      Ok(Uint128::zero())
+    })?;
+  }
 
   let mut resp = Response::new().add_attributes(vec![
     attr("action", "take_profit"),
