@@ -12,7 +12,7 @@ pub fn send_profit(
 ) -> ContractResult<Response> {
   let mut profit =
     if let Some(mut account) = DELEGATION_ACCOUNTS.may_load(deps.storage, info.sender.clone())? {
-      account.take_profit(deps.storage, deps.api)?
+      account.send_profit(deps.storage)?
     } else {
       Uint128::zero()
     };

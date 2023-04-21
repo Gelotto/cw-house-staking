@@ -39,7 +39,7 @@ pub fn receive_payment(
     },
   )?;
 
-  // validate funding and add any required transfer submsg to response
+  // verify funding and add any necessary transfer submsg to response
   match TOKEN.load(deps.storage)? {
     Token::Native { denom } => {
       if !has_funds(&info.funds, payment, &denom) {
@@ -78,9 +78,10 @@ pub fn receive_payment(
     increment(deps.storage, &NET_PROFIT, profit_delta)?;
   }
 
-  Snapshot::upsert(deps.storage, deps.api, payment, Uint128::zero())?;
+  // create a new delegation snapshot
+  Snapshot::upsert(deps.storage, payment, Uint128::zero())?;
 
-  amortize(deps.storage, deps.api, 5)?;
+  amortize(deps.storage, 5)?;
 
   Ok(resp)
 }

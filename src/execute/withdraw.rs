@@ -11,31 +11,40 @@ pub fn withdraw(
   _env: Env,
   info: MessageInfo,
 ) -> ContractResult<Response> {
+  // total number oxisting delegation acounts:
   let n_accounts = DelegationAccount::get_count(deps.storage)?;
 
-  let mut amount =
+  // process the DelegationAccount's outstanding delegation, claiming whatever liquidity
+  // and profit is owed.
+  let amount =
     if let Some(account) = DELEGATION_ACCOUNTS.may_load(deps.storage, info.sender.clone())? {
-      let amount = account.withdraw(deps.storage, deps.api)?;
+      let mut amount = account.withdraw(deps.storage)?;
+
+      // adjust contract-level profit and liquidity accumulators:
+      if n_accounts == Uint128::one() {
+        NET_PROFIT.update(deps.storage, |dust| -> ContractResult<_> {
+          amount += dust;
+          Ok(Uint128::zero())
+        })?;
+
+        NET_LIQUIDITY.update(deps.storage, |dust| -> ContractResult<_> {
+          amount += dust;
+          Ok(Uint128::zero())
+        })?;
+      }
+
+      // remove the account
       DELEGATION_ACCOUNTS.remove(deps.storage, info.sender.clone());
+
+      // adjust DelegationAccount counter
+      decrement(deps.storage, &DELEGATION_ACCOUNTS_LEN, Uint128::one())?;
+
       amount
     } else {
       Uint128::zero()
     };
 
-  if !n_accounts.is_zero() {
-    decrement(deps.storage, &DELEGATION_ACCOUNTS_LEN, Uint128::one())?;
-    if n_accounts == Uint128::one() {
-      NET_PROFIT.update(deps.storage, |dust| -> ContractResult<_> {
-        amount += dust;
-        Ok(Uint128::zero())
-      })?;
-      NET_LIQUIDITY.update(deps.storage, |dust| -> ContractResult<_> {
-        amount += dust;
-        Ok(Uint128::zero())
-      })?;
-    }
-  }
-
+  // build response with token transfer submsg
   let mut resp = Response::new().add_attributes(vec![
     attr("action", "withdraw"),
     attr("amount", amount.to_string()),

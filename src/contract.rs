@@ -34,14 +34,11 @@ pub fn execute(
     ExecuteMsg::Delegate { growth, profit } => execute::delegate(deps, env, info, growth, profit),
     ExecuteMsg::Withdraw {} => execute::withdraw(deps, env, info),
     ExecuteMsg::SendProfit {} => execute::send_profit(deps, env, info),
+    ExecuteMsg::SetClient { address } => execute::set_client(deps, env, info, address),
     ExecuteMsg::ReceivePayment { amount } => execute::receive_payment(deps, env, info, amount),
     ExecuteMsg::SendPayment { recipient, amount } => {
       execute::send_payment(deps, env, info, recipient, amount)
     },
-    ExecuteMsg::SetClient {
-      address,
-      pct_liquidity,
-    } => execute::set_client(deps, env, info, address, pct_liquidity),
   }
 }
 
