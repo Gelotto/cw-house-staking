@@ -12,19 +12,20 @@ can run on any Cosmos network in which CW execution is enabled. All functions
 have amortized O(1) runtime. To build and deploy this contract, you can use the
 Makefile that's provided. More details on this to come.
 
-Each contract represents an organization, or _house_, where eseentially all
-functions in the API represent things that the house can do. In a nutshell, it
-can receive or send payments, receive delegations, and send tokens to delegators
-whenever they claim profit or withdraw their funds.
+Each contract represents an organization, or _house_, where essentially all API
+functions represent capabilities of the house. In a nutshell, the house can
+receive or send payments, modify delegations, and transfer tokens when a user
+takes profit or withdraws their stake.
 
 To minimize volatility in available liquidity, delegations are split between two
-distinct internal pools: a _revenue growth_ pool and a _profit_ pool. When a user
-delegates, they can specify separate amounts to deposit in either pool.
+internal pools: a _revenue growth_ pool and a _profit_ pool. When a user
+delegates, they specify distinct amounts to add to each pool.
+
 Moreover, when the house generates revenue, the size of the growth pool
 determines the portion of revenue that goes back to the house in the form of
-additional liquidity, auto-compounding it. The remaining portion gets set aside
-as profit or "rewards" that users can claim at any time, without affecting the
-amount of available liquidity.
+additional liquidity, auto-compounding it. The revenue left over gets set aside
+as profit that users can claim at any time, proportional to their delegation,
+without impacting the available liquidity of the house.
 
 The core API consists of the following functions:
 
