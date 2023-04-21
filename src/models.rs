@@ -1,16 +1,16 @@
 use std::collections::HashSet;
 
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Addr, Api, Order, Storage, Uint128};
+use cosmwasm_std::{Addr, Api, Order, Storage, Timestamp, Uint128};
 use cw_storage_plus::Map;
 
 use crate::{
   error::ContractError,
   state::{
-    ACCOUNTS, ACCOUNTS_LEN, ACCOUNT_MEMOIZATION_QUEUE, GROWTH_DELEGATIONS,
-    GROWTH_DELEGATIONS_SEQ_NO, GROWTH_DELEGATOR_COUNT, NET_GROWTH_DELEGATION, NET_LIQUIDITY,
-    NET_PROFIT, NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO,
-    PROFIT_DELEGATOR_COUNT, SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN, SNAPSHOT_SEQ_NO,
+    DELEGATION_ACCOUNTS, DELEGATION_ACCOUNTS_LEN, GROWTH_DELEGATIONS, GROWTH_DELEGATIONS_SEQ_NO,
+    GROWTH_DELEGATOR_COUNT, MEMOIZATION_QUEUE, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
+    NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO, PROFIT_DELEGATOR_COUNT,
+    SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN, SNAPSHOT_SEQ_NO,
   },
   util::{decrement, increment, log},
 };
@@ -24,11 +24,21 @@ pub enum DelegationType {
 }
 
 #[cw_serde]
-pub struct Account {
+pub struct DelegationAccount {
   pub owner: Addr,
+  pub created_at: Timestamp,
   pub memoized_profit: Uint128,
   pub memoized_gain: Uint128,
   pub memoized_loss: Uint128,
+}
+
+#[cw_serde]
+pub struct ClientAccount {
+  pub owner: Addr,
+  pub pct_liquidity: u32,
+  pub created_at: Timestamp,
+  pub liquidity_spent: Uint128,
+  pub revenue_generated: Uint128,
 }
 
 #[cw_serde]
@@ -46,6 +56,35 @@ pub struct Delegation {
   pub owner: Addr,
   pub amount: Uint128,
   pub i_snapshot: Uint128,
+}
+
+pub fn amortize(
+  storage: &mut dyn Storage,
+  api: &dyn Api,
+  count: u32,
+) -> ContractResult<()> {
+  let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
+  for _i in 0..count {
+    for _retry in 0..5 {
+      if let Some(owner) = MEMOIZATION_QUEUE.pop_front(storage)? {
+        if visited.contains(&owner) {
+          // already amorized all existing accounts
+          MEMOIZATION_QUEUE.push_front(storage, &owner)?;
+          return Ok(());
+        }
+        if let Some(mut account) = DELEGATION_ACCOUNTS.may_load(storage, owner.clone())? {
+          account.memoize_claim_amounts(storage, api)?;
+          visited.insert(owner.clone());
+          MEMOIZATION_QUEUE.push_back(storage, &owner)?;
+          DELEGATION_ACCOUNTS.save(storage, owner.clone(), &account)?;
+        }
+      } else {
+        // queue is empty
+        break;
+      }
+    }
+  }
+  Ok(())
 }
 
 impl Snapshot {
@@ -130,10 +169,14 @@ impl Snapshot {
 
 impl Delegation {}
 
-impl Account {
-  pub fn new(owner: &Addr) -> Self {
+impl DelegationAccount {
+  pub fn new(
+    owner: &Addr,
+    created_at: Timestamp,
+  ) -> Self {
     Self {
       owner: owner.clone(),
+      created_at,
       memoized_gain: Uint128::zero(),
       memoized_loss: Uint128::zero(),
       memoized_profit: Uint128::zero(),
@@ -143,9 +186,10 @@ impl Account {
   pub fn get_or_create(
     storage: &mut dyn Storage,
     owner: &Addr,
+    created_at: Timestamp,
   ) -> ContractResult<(Self, bool)> {
     let mut is_new_account = false;
-    let account = ACCOUNTS.update(
+    let account = DELEGATION_ACCOUNTS.update(
       storage,
       owner.clone(),
       |maybe_account| -> ContractResult<_> {
@@ -153,18 +197,18 @@ impl Account {
           Ok(account)
         } else {
           is_new_account = true;
-          Ok(Account::new(owner))
+          Ok(DelegationAccount::new(owner, created_at))
         }
       },
     )?;
     if is_new_account {
-      increment(storage, &ACCOUNTS_LEN, Uint128::one())?;
+      increment(storage, &DELEGATION_ACCOUNTS_LEN, Uint128::one())?;
     }
     Ok((account, is_new_account))
   }
 
   pub fn get_count(storage: &dyn Storage) -> ContractResult<Uint128> {
-    Ok(ACCOUNTS_LEN.load(storage)?)
+    Ok(DELEGATION_ACCOUNTS_LEN.load(storage)?)
   }
 
   pub fn has_delegation(
@@ -300,7 +344,7 @@ impl Account {
 
     increment(storage, &SNAPSHOT_SEQ_NO, Uint128::one())?;
 
-    ACCOUNTS.save(storage, self.owner.clone(), &self)?;
+    DELEGATION_ACCOUNTS.save(storage, self.owner.clone(), &self)?;
 
     Ok(amount)
   }
@@ -668,36 +712,7 @@ impl Account {
     self.memoized_loss += loss;
     self.memoized_profit += profit;
 
-    ACCOUNTS.save(storage, self.owner.clone(), self)?;
-    Ok(())
-  }
-
-  pub fn amortize_claim_function(
-    storage: &mut dyn Storage,
-    api: &dyn Api,
-    count: u32,
-  ) -> ContractResult<()> {
-    let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
-    for _i in 0..count {
-      for _retry in 0..5 {
-        if let Some(owner) = ACCOUNT_MEMOIZATION_QUEUE.pop_front(storage)? {
-          if visited.contains(&owner) {
-            // already amorized all existing accounts
-            ACCOUNT_MEMOIZATION_QUEUE.push_front(storage, &owner)?;
-            return Ok(());
-          }
-          if let Some(mut account) = ACCOUNTS.may_load(storage, owner.clone())? {
-            account.memoize_claim_amounts(storage, api)?;
-            visited.insert(owner.clone());
-            ACCOUNT_MEMOIZATION_QUEUE.push_back(storage, &owner)?;
-            ACCOUNTS.save(storage, owner.clone(), &account)?;
-          }
-        } else {
-          // queue is empty
-          break;
-        }
-      }
-    }
+    DELEGATION_ACCOUNTS.save(storage, self.owner.clone(), self)?;
     Ok(())
   }
 }

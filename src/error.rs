@@ -17,4 +17,10 @@ pub enum ContractError {
 
   #[error("MissingAmount")]
   MissingAmount {},
+
+  #[error("InsufficientLiquidity")]
+  InsufficientLiquidity {},
+
+  #[error("InsufficientFunds")]
+  InsufficientFunds {},
 }

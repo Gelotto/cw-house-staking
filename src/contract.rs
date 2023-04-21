@@ -8,7 +8,7 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
 use cw2::set_contract_version;
 
-const CONTRACT_NAME: &str = "crates.io:cw-contract-template";
+const CONTRACT_NAME: &str = "crates.io:house-staking-contract";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -31,11 +31,17 @@ pub fn execute(
   msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
   match msg {
-    ExecuteMsg::Stake { growth, profit } => execute::stake(deps, env, info, growth, profit),
-    ExecuteMsg::Earn { amount } => execute::earn(deps, env, info, amount),
-    ExecuteMsg::Pay { recipient, amount } => execute::pay(deps, env, info, recipient, amount),
-    ExecuteMsg::TakeProfit {} => execute::take_profit(deps, env, info),
+    ExecuteMsg::Delegate { growth, profit } => execute::delegate(deps, env, info, growth, profit),
     ExecuteMsg::Withdraw {} => execute::withdraw(deps, env, info),
+    ExecuteMsg::SendProfit {} => execute::send_profit(deps, env, info),
+    ExecuteMsg::ReceivePayment { amount } => execute::receive_payment(deps, env, info, amount),
+    ExecuteMsg::SendPayment { recipient, amount } => {
+      execute::send_payment(deps, env, info, recipient, amount)
+    },
+    ExecuteMsg::SetClient {
+      address,
+      pct_liquidity,
+    } => execute::set_client(deps, env, info, address, pct_liquidity),
   }
 }
 

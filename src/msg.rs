@@ -1,18 +1,23 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Uint128};
+use cw_lib::models::Token;
 
-use crate::models::Snapshot;
+use crate::models::{ClientAccount, DelegationAccount, Snapshot};
 
 #[cw_serde]
-pub struct InstantiateMsg {}
+pub struct InstantiateMsg {
+  pub acl_address: Addr,
+  pub token: Token,
+}
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  Stake { growth: Uint128, profit: Uint128 },
-  TakeProfit {},
+  SetClient { address: Addr, pct_liquidity: u32 },
+  Delegate { growth: Uint128, profit: Uint128 },
+  ReceivePayment { amount: Uint128 },
+  SendPayment { recipient: Addr, amount: Uint128 },
+  SendProfit {},
   Withdraw {},
-  Earn { amount: Uint128 },
-  Pay { recipient: Addr, amount: Uint128 },
 }
 
 #[cw_serde]
@@ -33,9 +38,16 @@ pub struct DelegationTotals {
 }
 
 #[cw_serde]
+pub struct Accounts {
+  pub delegation: Option<DelegationAccount>,
+  pub client: Option<ClientAccount>,
+}
+
+#[cw_serde]
 pub struct SelectResponse {
   pub liquidity: Option<Uint128>,
   pub profit: Option<Uint128>,
   pub snapshots: Option<Vec<Snapshot>>,
   pub pools: Option<DelegationTotals>,
+  pub accounts: Option<Accounts>,
 }

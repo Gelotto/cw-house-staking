@@ -1,11 +1,13 @@
-mod earn;
-mod pay;
-mod stake;
-mod take_profit;
+mod delegate;
+mod receive_payment;
+mod send_payment;
+mod send_profit;
+mod set_client;
 mod withdraw;
 
-pub use earn::earn;
-pub use pay::pay;
-pub use stake::stake;
-pub use take_profit::take_profit;
+pub use delegate::delegate;
+pub use receive_payment::receive_payment;
+pub use send_payment::send_payment;
+pub use send_profit::send_profit;
+pub use set_client::set_client;
 pub use withdraw::withdraw;
