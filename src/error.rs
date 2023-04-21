@@ -12,15 +12,15 @@ pub enum ContractError {
   #[error("NotAuthorized")]
   NotAuthorized {},
 
-  #[error("ValidationError")]
-  ValidationError {},
-
-  #[error("MissingAmount")]
-  MissingAmount {},
+  #[error("InsufficientFunds")]
+  InsufficientFunds {},
 
   #[error("InsufficientLiquidity")]
   InsufficientLiquidity {},
 
-  #[error("InsufficientFunds")]
-  InsufficientFunds {},
+  #[error("InsufficientDelegation")]
+  InsufficientDelegation {},
+
+  #[error("InsufficientAllowance")]
+  InsufficientAllowance {},
 }

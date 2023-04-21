@@ -1,15 +1,16 @@
 use crate::{
   error::ContractError,
-  models::{amortize, ContractResult, Snapshot},
+  models::{ContractResult, Snapshot},
   state::{
-    CLIENT_ACCOUNTS, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT, NET_PROFIT_DELEGATION, TOKEN,
+    amortize, CLIENT_ACCOUNTS, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
+    NET_PROFIT_DELEGATION, TOKEN,
   },
   util::increment,
 };
 use cosmwasm_std::{attr, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw_lib::{
   models::Token,
-  utils::funds::{build_cw20_transfer_from_msg, has_balance, has_funds},
+  utils::funds::{build_cw20_transfer_from_msg, has_funds},
 };
 
 pub fn receive_payment(
@@ -18,8 +19,10 @@ pub fn receive_payment(
   info: MessageInfo,
   payment: Uint128,
 ) -> ContractResult<Response> {
+  let mut resp = Response::new().add_attributes(vec![attr("action", "receive_payment")]);
+
   if payment.is_zero() {
-    return Err(crate::error::ContractError::MissingAmount {});
+    return Ok(resp);
   }
 
   // tally client total historical payment amount received
@@ -36,14 +39,10 @@ pub fn receive_payment(
     },
   )?;
 
-  let mut resp = Response::new().add_attributes(vec![attr("action", "receive_payment")]);
-
   // validate funding and add any required transfer submsg to response
   match TOKEN.load(deps.storage)? {
     Token::Native { denom } => {
-      if !(has_funds(&info.funds, payment, &denom)
-        && has_balance(deps.querier, &info.sender, payment, &denom, false)?)
-      {
+      if !has_funds(&info.funds, payment, &denom) {
         return Err(crate::error::ContractError::InsufficientFunds {});
       }
     },

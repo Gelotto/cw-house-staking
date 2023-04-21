@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Api, Order, Storage, Timestamp, Uint128};
 use cw_storage_plus::Map;
@@ -8,7 +6,7 @@ use crate::{
   error::ContractError,
   state::{
     DELEGATION_ACCOUNTS, DELEGATION_ACCOUNTS_LEN, GROWTH_DELEGATIONS, GROWTH_DELEGATIONS_SEQ_NO,
-    GROWTH_DELEGATOR_COUNT, MEMOIZATION_QUEUE, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
+    GROWTH_DELEGATOR_COUNT, NET_GROWTH_DELEGATION, NET_LIQUIDITY, NET_PROFIT,
     NET_PROFIT_DELEGATION, PROFIT_DELEGATIONS, PROFIT_DELEGATIONS_SEQ_NO, PROFIT_DELEGATOR_COUNT,
     SNAPSHOTS, SNAPSHOTS_INDEX, SNAPSHOTS_LEN, SNAPSHOT_SEQ_NO,
   },
@@ -47,8 +45,8 @@ pub struct Snapshot {
   pub claims_remaining: u32,
   pub growth_delegation: Uint128,
   pub profit_delegation: Uint128,
-  pub income: Uint128,
-  pub outlay: Uint128,
+  pub revenue: Uint128,
+  pub spend: Uint128,
 }
 
 #[cw_serde]
@@ -56,35 +54,6 @@ pub struct Delegation {
   pub owner: Addr,
   pub amount: Uint128,
   pub i_snapshot: Uint128,
-}
-
-pub fn amortize(
-  storage: &mut dyn Storage,
-  api: &dyn Api,
-  count: u32,
-) -> ContractResult<()> {
-  let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
-  for _i in 0..count {
-    for _retry in 0..5 {
-      if let Some(owner) = MEMOIZATION_QUEUE.pop_front(storage)? {
-        if visited.contains(&owner) {
-          // already amorized all existing accounts
-          MEMOIZATION_QUEUE.push_front(storage, &owner)?;
-          return Ok(());
-        }
-        if let Some(mut account) = DELEGATION_ACCOUNTS.may_load(storage, owner.clone())? {
-          account.memoize_claim_amounts(storage, api)?;
-          visited.insert(owner.clone());
-          MEMOIZATION_QUEUE.push_back(storage, &owner)?;
-          DELEGATION_ACCOUNTS.save(storage, owner.clone(), &account)?;
-        }
-      } else {
-        // queue is empty
-        break;
-      }
-    }
-  }
-  Ok(())
 }
 
 impl Snapshot {
@@ -119,7 +88,7 @@ impl Snapshot {
   pub fn upsert(
     storage: &mut dyn Storage,
     api: &dyn Api,
-    income: Uint128,
+    revenue: Uint128,
     outlay: Uint128,
   ) -> ContractResult<Self> {
     let growth_delegation = NET_GROWTH_DELEGATION.load(storage)?;
@@ -130,8 +99,8 @@ impl Snapshot {
 
     if let Some((i_prev_snapshot, mut prev_snapshot)) = Self::get_latest(storage)? {
       if prev_snapshot.seq_no == seq_no {
-        prev_snapshot.income += income;
-        prev_snapshot.outlay += outlay;
+        prev_snapshot.revenue += revenue;
+        prev_snapshot.spend += outlay;
         SNAPSHOTS.save(storage, i_prev_snapshot, &prev_snapshot)?;
         return Ok(prev_snapshot);
       }
@@ -155,8 +124,8 @@ impl Snapshot {
       claims_remaining,
       growth_delegation,
       profit_delegation,
-      income,
-      outlay,
+      revenue,
+      spend: outlay,
     };
 
     SNAPSHOTS.save(storage, i_snapshot, &snapshot)?;
@@ -640,8 +609,8 @@ impl DelegationAccount {
             );
 
             let x_total = s.get_total_delegation();
-            total_gain += s.income.multiply_ratio(d0.amount, x_total);
-            total_loss += s.outlay.multiply_ratio(d0.amount, s.growth_delegation);
+            total_gain += s.revenue.multiply_ratio(d0.amount, x_total);
+            total_loss += s.spend.multiply_ratio(d0.amount, s.growth_delegation);
 
             s.claims_remaining -= 1;
             if s.claims_remaining == 0 {
@@ -663,7 +632,9 @@ impl DelegationAccount {
               format!("processing snapshot {} for profit delegation", i_snapshot),
             );
 
-            total_gain += s.income.multiply_ratio(d0.amount, s.get_total_delegation());
+            total_gain += s
+              .revenue
+              .multiply_ratio(d0.amount, s.get_total_delegation());
 
             s.claims_remaining -= 1;
             if s.claims_remaining == 0 {

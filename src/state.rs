@@ -1,7 +1,9 @@
-use crate::models::{ClientAccount, Delegation, DelegationAccount};
+use std::collections::HashSet;
+
+use crate::models::{ClientAccount, ContractResult, Delegation, DelegationAccount};
 use crate::msg::InstantiateMsg;
 use crate::{error::ContractError, models::Snapshot};
-use cosmwasm_std::{Addr, Deps, DepsMut, Env, MessageInfo, Uint128};
+use cosmwasm_std::{Addr, Api, Deps, DepsMut, Env, MessageInfo, Storage, Uint128};
 use cw_acl::client::Acl;
 use cw_lib::models::Token;
 use cw_storage_plus::{Deque, Item, Map};
@@ -71,4 +73,33 @@ pub fn is_allowed(
   let acl_addr = ACL_ADDRESS.load(deps.storage)?;
   let acl = Acl::new(&acl_addr);
   Ok(acl.is_allowed(&deps.querier, principal, action)?)
+}
+
+pub fn amortize(
+  storage: &mut dyn Storage,
+  api: &dyn Api,
+  count: u32,
+) -> ContractResult<()> {
+  let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
+  for _i in 0..count {
+    for _retry in 0..5 {
+      if let Some(owner) = MEMOIZATION_QUEUE.pop_front(storage)? {
+        if visited.contains(&owner) {
+          // already amorized all existing accounts
+          MEMOIZATION_QUEUE.push_front(storage, &owner)?;
+          return Ok(());
+        }
+        if let Some(mut account) = DELEGATION_ACCOUNTS.may_load(storage, owner.clone())? {
+          account.memoize_claim_amounts(storage, api)?;
+          visited.insert(owner.clone());
+          MEMOIZATION_QUEUE.push_back(storage, &owner)?;
+          DELEGATION_ACCOUNTS.save(storage, owner.clone(), &account)?;
+        }
+      } else {
+        // queue is empty
+        break;
+      }
+    }
+  }
+  Ok(())
 }

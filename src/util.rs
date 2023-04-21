@@ -1,4 +1,4 @@
-use cosmwasm_std::{Api, Storage};
+use cosmwasm_std::{Api, Storage, Uint128};
 use cw_storage_plus::Item;
 use serde::{de::DeserializeOwned, Serialize};
 
@@ -35,4 +35,11 @@ pub fn log(
   prefixed_msg.push_str(format!(" [{}] ", tag).to_uppercase().as_str());
   prefixed_msg.push_str(&msg);
   api.debug(&prefixed_msg);
+}
+
+pub fn mul_pct(
+  total: Uint128,
+  pct: Uint128,
+) -> Uint128 {
+  total.multiply_ratio(pct, Uint128::from(1000u128))
 }

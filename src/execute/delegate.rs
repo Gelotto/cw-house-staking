@@ -1,12 +1,12 @@
 use crate::{
-  models::{amortize, ContractResult, DelegationAccount, DelegationType},
-  state::{MEMOIZATION_QUEUE, NET_LIQUIDITY, TOKEN},
+  models::{ContractResult, DelegationAccount, DelegationType},
+  state::{amortize, MEMOIZATION_QUEUE, NET_LIQUIDITY, TOKEN},
   util::increment,
 };
 use cosmwasm_std::{attr, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw_lib::{
   models::Token,
-  utils::funds::{build_cw20_transfer_from_msg, has_balance, has_funds},
+  utils::funds::{build_cw20_transfer_from_msg, has_funds},
 };
 
 pub fn delegate(
@@ -20,14 +20,12 @@ pub fn delegate(
   let total_delegation = growth_delegation + profit_delegation;
 
   if total_delegation.is_zero() {
-    return Err(crate::error::ContractError::InsufficientFunds {});
+    return Err(crate::error::ContractError::InsufficientDelegation {});
   }
 
   match TOKEN.load(deps.storage)? {
     Token::Native { denom } => {
-      if !(has_funds(&info.funds, total_delegation, &denom)
-        && has_balance(deps.querier, &info.sender, total_delegation, &denom, false)?)
-      {
+      if !has_funds(&info.funds, total_delegation, &denom) {
         return Err(crate::error::ContractError::InsufficientFunds {});
       }
     },
