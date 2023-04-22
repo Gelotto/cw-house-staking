@@ -1,8 +1,8 @@
-use cosmwasm_std::{Storage, Uint128};
+use cosmwasm_std::{Addr, Api, Storage, Uint128};
 use cw_storage_plus::Item;
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::models::ContractResult;
+use crate::{error::ContractError, models::ContractResult};
 
 pub fn increment<T>(
   storage: &mut dyn Storage,
@@ -31,4 +31,13 @@ pub fn mul_pct(
   pct: Uint128,
 ) -> Uint128 {
   total.multiply_ratio(pct, Uint128::from(1000u128))
+}
+
+pub fn validate_addr(
+  api: &dyn Api,
+  addr_str: &String,
+) -> ContractResult<Addr> {
+  api
+    .addr_validate(addr_str)
+    .map_err(|_| ContractError::InvalidAddress {})
 }

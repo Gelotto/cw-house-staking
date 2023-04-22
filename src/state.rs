@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
+use crate::models::Snapshot;
 use crate::models::{ClientAccount, ContractResult, Delegation, DelegationAccount};
 use crate::msg::InstantiateMsg;
-use crate::{error::ContractError, models::Snapshot};
+use crate::util::validate_addr;
 use cosmwasm_std::{Addr, Deps, DepsMut, Env, MessageInfo, Storage, Uint128};
 use cw_acl::client::Acl;
 use cw_lib::models::Token;
@@ -45,8 +46,10 @@ pub fn initialize(
   _env: &Env,
   _info: &MessageInfo,
   msg: &InstantiateMsg,
-) -> Result<(), ContractError> {
-  ACL_ADDRESS.save(deps.storage, &msg.acl_address)?;
+) -> ContractResult<()> {
+  let acl_addr = validate_addr(deps.api, &msg.acl_address)?;
+
+  ACL_ADDRESS.save(deps.storage, &acl_addr)?;
   TOKEN.save(deps.storage, &msg.token)?;
   NET_GROWTH_DELEGATION.save(deps.storage, &Uint128::zero())?;
   NET_PROFIT_DELEGATION.save(deps.storage, &Uint128::zero())?;
@@ -60,6 +63,7 @@ pub fn initialize(
   GROWTH_DELEGATOR_COUNT.save(deps.storage, &0)?;
   PROFIT_DELEGATOR_COUNT.save(deps.storage, &0)?;
   CLIENT_ACCOUNTS_LEN.save(deps.storage, &0)?;
+
   Ok(())
 }
 
@@ -69,7 +73,7 @@ pub fn is_allowed(
   deps: &Deps,
   principal: &Addr,
   action: &str,
-) -> Result<bool, ContractError> {
+) -> ContractResult<bool> {
   let acl_addr = ACL_ADDRESS.load(deps.storage)?;
   let acl = Acl::new(&acl_addr);
   Ok(acl.is_allowed(&deps.querier, principal, action)?)

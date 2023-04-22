@@ -9,6 +9,9 @@ pub enum ContractError {
   #[error("SnapshotNotFound")]
   SnapshotNotFound {},
 
+  #[error("InvalidAddress")]
+  InvalidAddress {},
+
   #[error("NotAuthorized")]
   NotAuthorized {},
 

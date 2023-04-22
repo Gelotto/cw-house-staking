@@ -2,18 +2,20 @@ use crate::{
   error::ContractError,
   models::{ContractResult, Snapshot},
   state::{amortize, CLIENT_ACCOUNTS, NET_LIQUIDITY, TOKEN},
-  util::decrement,
+  util::{decrement, validate_addr},
 };
-use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Uint128};
+use cosmwasm_std::{attr, DepsMut, Env, MessageInfo, Response, Uint128};
 use cw_lib::utils::funds::build_send_submsg;
 
 pub fn send_payment(
   deps: DepsMut,
   _env: Env,
   info: MessageInfo,
-  recipient: Addr,
+  raw_recipient: &String,
   payment: Uint128,
 ) -> ContractResult<Response> {
+  let recipient = validate_addr(deps.api, raw_recipient)?;
+
   let resp = Response::new().add_attributes(vec![
     attr("action", "send_payment"),
     attr("amount", payment.to_string()),

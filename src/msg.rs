@@ -6,16 +6,16 @@ use crate::models::{ClientAccount, DelegationAccount, Snapshot};
 
 #[cw_serde]
 pub struct InstantiateMsg {
-  pub acl_address: Addr,
+  pub acl_address: String,
   pub token: Token,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  SetClient { address: Addr },
+  SetClient { address: String },
   Delegate { growth: Uint128, profit: Uint128 },
   ReceivePayment { amount: Uint128 },
-  SendPayment { recipient: Addr, amount: Uint128 },
+  SendPayment { recipient: String, amount: Uint128 },
   SendProfit {},
   Withdraw {},
 }
