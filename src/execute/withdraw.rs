@@ -21,7 +21,7 @@ pub fn withdraw(
       let mut amount = account.withdraw(deps.storage)?;
 
       // adjust contract-level profit and liquidity accumulators:
-      if n_accounts == Uint128::one() {
+      if n_accounts == 1 {
         NET_PROFIT.update(deps.storage, |dust| -> ContractResult<_> {
           amount += dust;
           Ok(Uint128::zero())
@@ -37,7 +37,7 @@ pub fn withdraw(
       DELEGATION_ACCOUNTS.remove(deps.storage, info.sender.clone());
 
       // adjust DelegationAccount counter
-      decrement(deps.storage, &DELEGATION_ACCOUNTS_LEN, Uint128::one())?;
+      decrement(deps.storage, &DELEGATION_ACCOUNTS_LEN, 1)?;
 
       amount
     } else {

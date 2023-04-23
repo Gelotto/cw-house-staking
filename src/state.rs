@@ -6,10 +6,10 @@ use crate::msg::InstantiateMsg;
 use crate::util::validate_addr;
 use cosmwasm_std::{Addr, Deps, DepsMut, Env, MessageInfo, Storage, Uint128};
 use cw_acl::client::Acl;
-use cw_lib::models::Token;
+use cw_lib::models::{Owner, Token};
 use cw_storage_plus::{Deque, Item, Map};
 
-pub const ACL_ADDRESS: Item<Addr> = Item::new("acl_address");
+pub const OWNER: Item<Owner> = Item::new("owner");
 pub const TOKEN: Item<Token> = Item::new("token");
 
 pub const NET_GROWTH_DELEGATION: Item<Uint128> = Item::new("net_growth_delegation");
@@ -22,7 +22,7 @@ pub const GROWTH_DELEGATOR_COUNT: Item<u32> = Item::new("growth_delegator_count"
 pub const PROFIT_DELEGATOR_COUNT: Item<u32> = Item::new("profit_delegator_count");
 
 pub const SNAPSHOTS: Map<u128, Snapshot> = Map::new("snapshots");
-pub const SNAPSHOTS_LEN: Item<Uint128> = Item::new("snapshot_len");
+pub const SNAPSHOTS_LEN: Item<u32> = Item::new("snapshot_len");
 pub const SNAPSHOTS_INDEX: Item<Uint128> = Item::new("snapshot_index");
 pub const SNAPSHOT_SEQ_NO: Item<Uint128> = Item::new("snapshot_seq_no");
 
@@ -33,7 +33,7 @@ pub const PROFIT_DELEGATIONS: Map<(Addr, u128), Delegation> = Map::new("profit_d
 pub const PROFIT_DELEGATIONS_SEQ_NO: Map<Addr, u128> = Map::new("profit_delegations_seq_no");
 
 pub const DELEGATION_ACCOUNTS: Map<Addr, DelegationAccount> = Map::new("delegation_accounts");
-pub const DELEGATION_ACCOUNTS_LEN: Item<Uint128> = Item::new("delegation_accounts_len");
+pub const DELEGATION_ACCOUNTS_LEN: Item<u32> = Item::new("delegation_accounts_len");
 
 pub const CLIENT_ACCOUNTS: Map<Addr, ClientAccount> = Map::new("client_accounts");
 pub const CLIENT_ACCOUNTS_LEN: Item<u32> = Item::new("client_accounts_len");
@@ -47,17 +47,23 @@ pub fn initialize(
   _info: &MessageInfo,
   msg: &InstantiateMsg,
 ) -> ContractResult<()> {
-  let acl_addr = validate_addr(deps.api, &msg.acl_address)?;
+  validate_addr(
+    deps.api,
+    match &msg.owner {
+      Owner::Address(addr) => addr,
+      Owner::Acl(addr) => addr,
+    },
+  )?;
 
-  ACL_ADDRESS.save(deps.storage, &acl_addr)?;
+  OWNER.save(deps.storage, &msg.owner)?;
   TOKEN.save(deps.storage, &msg.token)?;
   NET_GROWTH_DELEGATION.save(deps.storage, &Uint128::zero())?;
   NET_PROFIT_DELEGATION.save(deps.storage, &Uint128::zero())?;
   NET_LIQUIDITY.save(deps.storage, &Uint128::zero())?;
   NET_PCT_LIQUIDITY_ALLOCATED.save(deps.storage, &0)?;
   NET_PROFIT.save(deps.storage, &Uint128::zero())?;
-  DELEGATION_ACCOUNTS_LEN.save(deps.storage, &Uint128::zero())?;
-  SNAPSHOTS_LEN.save(deps.storage, &Uint128::zero())?;
+  DELEGATION_ACCOUNTS_LEN.save(deps.storage, &0)?;
+  SNAPSHOTS_LEN.save(deps.storage, &0)?;
   SNAPSHOTS_INDEX.save(deps.storage, &Uint128::zero())?;
   SNAPSHOT_SEQ_NO.save(deps.storage, &Uint128::zero())?;
   GROWTH_DELEGATOR_COUNT.save(deps.storage, &0)?;
@@ -74,9 +80,13 @@ pub fn is_allowed(
   principal: &Addr,
   action: &str,
 ) -> ContractResult<bool> {
-  let acl_addr = ACL_ADDRESS.load(deps.storage)?;
-  let acl = Acl::new(&acl_addr);
-  Ok(acl.is_allowed(&deps.querier, principal, action)?)
+  Ok(match OWNER.load(deps.storage)? {
+    Owner::Address(addr) => *principal == addr,
+    Owner::Acl(acl_addr) => {
+      let acl = Acl::new(&acl_addr);
+      acl.is_allowed(&deps.querier, principal, action)?
+    },
+  })
 }
 
 pub fn amortize(

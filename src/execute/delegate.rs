@@ -83,7 +83,7 @@ fn get_or_create_account(
 
   if is_new_account {
     // adjust global DelegationAccount counter
-    increment(storage, &DELEGATION_ACCOUNTS_LEN, Uint128::one())?;
+    increment(storage, &DELEGATION_ACCOUNTS_LEN, 1)?;
 
     // add the new account to the back of the memoization queue for use
     // by amortization.

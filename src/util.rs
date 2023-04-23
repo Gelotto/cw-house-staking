@@ -35,9 +35,9 @@ pub fn mul_pct(
 
 pub fn validate_addr(
   api: &dyn Api,
-  addr_str: &String,
+  addr: &Addr,
 ) -> ContractResult<Addr> {
   api
-    .addr_validate(addr_str)
+    .addr_validate(addr.as_str())
     .map_err(|_| ContractError::InvalidAddress {})
 }

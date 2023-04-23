@@ -1,21 +1,21 @@
 use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Uint128};
-use cw_lib::models::Token;
+use cw_lib::models::{Owner, Token};
 
-use crate::models::{ClientAccount, DelegationAccount, Snapshot};
+use crate::models::Snapshot;
 
 #[cw_serde]
 pub struct InstantiateMsg {
-  pub acl_address: String,
+  pub owner: Owner,
   pub token: Token,
 }
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  SetClient { address: String },
+  SetClient { address: Addr },
   Delegate { growth: Uint128, profit: Uint128 },
   ReceivePayment { amount: Uint128 },
-  SendPayment { recipient: String, amount: Uint128 },
+  SendPayment { recipient: Addr, amount: Uint128 },
   SendProfit {},
   Withdraw {},
 }
@@ -32,22 +32,35 @@ pub enum QueryMsg {
 pub struct MigrateMsg {}
 
 #[cw_serde]
-pub struct DelegationTotals {
+pub struct PoolsView {
   pub growth: Uint128,
   pub profit: Uint128,
 }
 
 #[cw_serde]
-pub struct Accounts {
-  pub delegation: Option<DelegationAccount>,
-  pub client: Option<ClientAccount>,
+pub struct StatsView {
+  pub n_delegation_accounts: u32,
+  pub n_client_accounts: u32,
+  pub n_snapshots: u32,
+}
+
+#[cw_serde]
+pub struct AccountView {
+  pub growth_delegation: Uint128,
+  pub profit_delegation: Uint128,
+  pub profit_claimable: Uint128,
+  pub loss_claimable: Uint128,
+  pub growth_claimable: Uint128,
+  pub liquidity_spent: Uint128,
+  pub revenue_generated: Uint128,
 }
 
 #[cw_serde]
 pub struct SelectResponse {
-  pub liquidity: Option<Uint128>,
-  pub profit: Option<Uint128>,
+  pub total_liquidity: Option<Uint128>,
+  pub total_profit_claimable: Option<Uint128>,
   pub snapshots: Option<Vec<Snapshot>>,
-  pub pools: Option<DelegationTotals>,
-  pub accounts: Option<Accounts>,
+  pub pools: Option<PoolsView>,
+  pub account: Option<AccountView>,
+  pub stats: Option<StatsView>,
 }

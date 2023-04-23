@@ -17,7 +17,7 @@ pub fn send_profit(
       Uint128::zero()
     };
 
-  if DelegationAccount::get_count(deps.storage)? == Uint128::one() {
+  if DelegationAccount::get_count(deps.storage)? == 1 {
     NET_PROFIT.update(deps.storage, |dust| -> ContractResult<_> {
       profit += dust;
       Ok(Uint128::zero())
