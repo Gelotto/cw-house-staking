@@ -1,12 +1,12 @@
 [package]
 name = "cw-house-staking"
-version = "0.0.1"
+version = "0.0.2"
 authors = []
 edition = "2021"
 description = "Smart Contract"
 license = "Apache-2.0"
 repository = ""
-homepage = ""
+homepage = "https://gelotto.io"
 documentation = ""
 
 [lib]
