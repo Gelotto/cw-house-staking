@@ -4,6 +4,7 @@ NETWORK=$1
 SENDER=$2
 TAG=$3
 CW20_ADDRESS=$4
+ACL_ADDRESS=$5
 LABEL="house-staking-$(date +%s)"
 LABEL="GLTO-house-staking"
 BUILD_DIR="./builds/build-$TAG"
@@ -13,7 +14,7 @@ FILE_CODE_ID="code-id"
 echo "using build dir $BUILD_DIR"
 CODE_ID=$(cat $BUILD_DIR/$FILE_CODE_ID)
 
-INSTANTIATE_MSG='{"token":{"cw20":{"address":"'$CW20_ADDRESS'"}},"owner":{"address":"'$SENDER'"}}'
+INSTANTIATE_MSG='{"token":{"cw20":{"address":"'$CW20_ADDRESS'"}},"owner":{"acl":"'$ACL_ADDRESS'"}}'
 
 case $NETWORK in
   devnet)

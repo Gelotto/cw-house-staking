@@ -31,8 +31,8 @@ pub fn set_client(
         Ok(ClientAccount {
           owner: address.clone(),
           created_at: env.block.time,
-          revenue_generated: Uint128::zero(),
-          liquidity_spent: Uint128::zero(),
+          amount_received: Uint128::zero(),
+          amount_spent: Uint128::zero(),
         })
       }
     },

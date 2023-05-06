@@ -89,13 +89,12 @@ pub fn is_allowed(
   })
 }
 
-pub fn amortize(
-  storage: &mut dyn Storage,
-  count: u32,
-) -> ContractResult<()> {
-  let mut visited: HashSet<Addr> = HashSet::with_capacity(count as usize);
-  for _i in 0..count {
-    for _retry in 0..5 {
+pub fn amortize(storage: &mut dyn Storage) -> ContractResult<()> {
+  let n_accounts = 1;
+  let n_retries = 2;
+  let mut visited: HashSet<Addr> = HashSet::with_capacity(n_accounts as usize);
+  for _ in 0..n_accounts {
+    for _ in 0..n_retries {
       if let Some(owner) = MEMOIZATION_QUEUE.pop_front(storage)? {
         if visited.contains(&owner) {
           // already amorized all existing accounts

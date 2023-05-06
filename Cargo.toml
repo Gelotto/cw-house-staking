@@ -1,8 +1,8 @@
 [package]
-name = "house-staking-contract"
+name = "cw-house-staking"
 version = "0.0.1"
 authors = []
-edition = "2018"
+edition = "2021"
 description = "Smart Contract"
 license = "Apache-2.0"
 repository = ""
@@ -32,8 +32,8 @@ cw-utils = { version = "1.0.1" }
 cw2 = { version = "1.0.1" }
 cw20 = { version = "1.0.1" }
 cw-storage-plus = { version = "1.0.1" }
-cosmwasm-schema = { version = "1.2.1" }
-cosmwasm-std = { version = "1.2.1" }
+cosmwasm-schema = { version = "1.2.4" }
+cosmwasm-std = { version = "1.2.4" }
 schemars = "0.8.1"
 serde = { version = "1.0.152", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.38" }

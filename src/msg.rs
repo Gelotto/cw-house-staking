@@ -12,10 +12,21 @@ pub struct InstantiateMsg {
 
 #[cw_serde]
 pub enum ExecuteMsg {
-  SetClient { address: Addr },
-  Delegate { growth: Uint128, profit: Uint128 },
-  ReceivePayment { amount: Uint128 },
-  SendPayment { recipient: Addr, amount: Uint128 },
+  SetClient {
+    address: Addr,
+  },
+  Delegate {
+    growth: Uint128,
+    profit: Uint128,
+  },
+  ReceivePayment {
+    sender: Option<Addr>,
+    amount: Uint128,
+  },
+  SendPayment {
+    recipient: Addr,
+    amount: Uint128,
+  },
   SendProfit {},
   Withdraw {},
 }

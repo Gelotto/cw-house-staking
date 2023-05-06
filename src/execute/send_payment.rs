@@ -12,17 +12,17 @@ pub fn send_payment(
   _env: Env,
   info: MessageInfo,
   recipient: &Addr,
-  payment: Uint128,
+  amount: Uint128,
 ) -> ContractResult<Response> {
   validate_addr(deps.api, recipient)?;
 
   let resp = Response::new().add_attributes(vec![
     attr("action", "send_payment"),
-    attr("amount", payment.to_string()),
+    attr("amount", amount.to_string()),
     attr("recipient", recipient.to_string()),
   ]);
 
-  if payment.is_zero() {
+  if amount.is_zero() {
     return Ok(resp);
   }
 
@@ -33,7 +33,7 @@ pub fn send_payment(
     |maybe_client| -> ContractResult<_> {
       if let Some(mut client) = maybe_client {
         // tally client total historical payment amount sent
-        client.liquidity_spent += payment;
+        client.amount_spent += amount;
         Ok(client)
       } else {
         Err(ContractError::NotAuthorized {})
@@ -42,17 +42,17 @@ pub fn send_payment(
   )?;
 
   // create a new delegation snapshot
-  Snapshot::upsert(deps.storage, Uint128::zero(), payment)?;
+  Snapshot::upsert(deps.storage, Uint128::zero(), amount)?;
 
   // remove payment amount from contract-level liquidity amount
-  decrement(deps.storage, &NET_LIQUIDITY, payment)?;
+  decrement(deps.storage, &NET_LIQUIDITY, amount)?;
 
-  amortize(deps.storage, 5)?;
+  amortize(deps.storage)?;
 
   // send response with token transfer submsg
   Ok(resp.add_submessage(build_send_submsg(
     &recipient,
-    payment,
+    amount,
     &TOKEN.load(deps.storage)?,
   )?))
 }

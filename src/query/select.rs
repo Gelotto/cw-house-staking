@@ -85,7 +85,7 @@ pub fn select(
 
       let (liquidity_spent, revenue_generated) =
         match CLIENT_ACCOUNTS.may_load(deps.storage, wallet.clone())? {
-          Some(client) => (client.liquidity_spent, client.revenue_generated),
+          Some(client) => (client.amount_spent, client.amount_received),
           None => (Uint128::zero(), Uint128::zero()),
         };
 

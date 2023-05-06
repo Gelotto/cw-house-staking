@@ -22,7 +22,7 @@ case $NETWORK in
     DENOM=ujunox
     ;;
   mainnet)
-    NODE="https://rpc-juno.itastakers.com",
+    NODE="https://rpc-juno.itastakers.com:443"
     CHAIN_ID=juno-1
     DENOM=ujuno
     ;;
@@ -34,9 +34,11 @@ case $NETWORK in
 esac
 
 
-transfer-ownership() {
+delegate() {
   sender=$1
-  msg='{"transfer_ownership":{}}'
+  growth_amount=$2
+  profit_amount=$3
+  msg='{"delegate":{"growth":"'$growth_amount'","profit":"'$profit_amount'"}}'
   flags="\
   --node $NODE \
   --gas-prices 0.025$DENOM \
@@ -66,8 +68,8 @@ set -e
 echo "executing $CMD for $CONTRACT_ADDR"
 
 case $CMD in
-  transfer-ownership)
-    transfer-ownership $1
+  delegate)
+    delegate $1 1000000000 500000000
     ;;
   query-select) 
     query-select

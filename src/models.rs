@@ -34,8 +34,8 @@ pub struct DelegationAccount {
 pub struct ClientAccount {
   pub owner: Addr,
   pub created_at: Timestamp,
-  pub liquidity_spent: Uint128,
-  pub revenue_generated: Uint128,
+  pub amount_spent: Uint128,
+  pub amount_received: Uint128,
 }
 
 #[cw_serde]
@@ -333,6 +333,8 @@ impl DelegationAccount {
       }
     }
 
+    // we only process the final delegation record if this claim call isn't
+    // happening as a result of calling amortize
     if !is_amortizing {
       if let Some((d0_index, d0)) = delegations.last() {
         let (growth, loss) = self.process_delegation(storage, target.clone(), d0, None)?;
@@ -566,12 +568,9 @@ impl Snapshot {
     growth: Uint128,
     loss: Uint128,
   ) -> ContractResult<Self> {
-    let growth_delegation = NET_GROWTH_DELEGATION.load(storage)?;
-    let profit_delegation = NET_PROFIT_DELEGATION.load(storage)?;
     let seq_no = SNAPSHOT_SEQ_NO.load(storage)?;
-    let claims_remaining =
-      GROWTH_DELEGATOR_COUNT.load(storage)? + PROFIT_DELEGATOR_COUNT.load(storage)?;
 
+    // try to update the latest existing snapshot
     if let Some((i_prev_snapshot, mut prev_snapshot)) = Self::get_latest(storage)? {
       if prev_snapshot.seq_no == seq_no {
         prev_snapshot.growth += growth;
@@ -582,6 +581,10 @@ impl Snapshot {
     }
 
     let i_snapshot = Self::get_next_index_and_increment(storage)?;
+    let growth_delegation = NET_GROWTH_DELEGATION.load(storage)?;
+    let profit_delegation = NET_PROFIT_DELEGATION.load(storage)?;
+    let claims_remaining =
+      GROWTH_DELEGATOR_COUNT.load(storage)? + PROFIT_DELEGATOR_COUNT.load(storage)?;
 
     // if we didn't just end up updating the previous snapshot,
     // we create and return a new one...

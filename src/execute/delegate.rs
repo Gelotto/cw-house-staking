@@ -8,7 +8,7 @@ use crate::{
 use cosmwasm_std::{attr, Addr, DepsMut, Env, MessageInfo, Response, Storage, Timestamp, Uint128};
 use cw_lib::{
   models::Token,
-  utils::funds::{build_cw20_transfer_from_msg, has_funds},
+  utils::funds::{build_cw20_transfer_from_submsg, has_funds},
 };
 
 pub fn delegate(
@@ -35,7 +35,7 @@ pub fn delegate(
     Token::Cw20 {
       address: cw20_address,
     } => {
-      resp = resp.add_submessage(build_cw20_transfer_from_msg(
+      resp = resp.add_submessage(build_cw20_transfer_from_submsg(
         &info.sender,
         &env.contract.address,
         &cw20_address,
@@ -57,7 +57,7 @@ pub fn delegate(
   // add total delegation to contract-level net liquidity accumulator
   increment(deps.storage, &NET_LIQUIDITY, total_delegation)?;
 
-  amortize(deps.storage, 5)?;
+  amortize(deps.storage)?;
 
   Ok(resp)
 }
