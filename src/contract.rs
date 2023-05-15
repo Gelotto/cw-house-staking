@@ -4,7 +4,7 @@ use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
 use crate::query;
 use crate::state;
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response};
 use cw2::set_contract_version;
 
 const CONTRACT_NAME: &str = "crates.io:house-staking-contract";
@@ -48,9 +48,10 @@ pub fn query(
   deps: Deps,
   _env: Env,
   msg: QueryMsg,
-) -> StdResult<Binary> {
+) -> ContractResult<Binary> {
   let result = match msg {
     QueryMsg::Select { fields, wallet } => to_binary(&query::select(deps, fields, wallet)?),
+    QueryMsg::Client { address } => to_binary(&query::get_client(deps, address)?),
   }?;
   Ok(result)
 }

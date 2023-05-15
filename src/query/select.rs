@@ -1,5 +1,5 @@
 use crate::{
-  models::DelegationType,
+  models::{ContractResult, DelegationType},
   msg::{AccountView, PoolsView, SelectResponse, StatsView},
   state::{
     CLIENT_ACCOUNTS, CLIENT_ACCOUNTS_LEN, DELEGATION_ACCOUNTS, DELEGATION_ACCOUNTS_LEN,
@@ -7,14 +7,14 @@ use crate::{
     SNAPSHOTS_LEN,
   },
 };
-use cosmwasm_std::{Addr, Deps, Order, StdResult, Uint128};
+use cosmwasm_std::{Addr, Deps, Order, Uint128};
 use cw_repository::client::Repository;
 
 pub fn select(
   deps: Deps,
   maybe_fields: Option<Vec<String>>,
   maybe_wallet: Option<Addr>,
-) -> StdResult<SelectResponse> {
+) -> ContractResult<SelectResponse> {
   let loader = Repository::loader(deps.storage, &maybe_fields);
   Ok(SelectResponse {
     // total spendable liquidity available

@@ -35,5 +35,8 @@ devnet:
 delegate:
 	./client.sh delegate $(network) $(tag) $(sender)
 
+set-client:
+	./client.sh set-client $(network) $(tag) $(sender) $(address)
+
 select:
 	./client.sh query-select $(network) $(tag)

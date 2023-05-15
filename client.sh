@@ -34,6 +34,26 @@ case $NETWORK in
 esac
 
 
+set-client() {
+  sender=$1
+  address=$2
+  msg='{"set_client":{"address":"'$address'"}}'
+  flags="\
+  --node $NODE \
+  --gas-prices 0.025$DENOM \
+  --chain-id $CHAIN_ID \
+  --from $sender \
+  --gas auto \
+  --gas-adjustment 1.5 \
+  --broadcast-mode block \
+  --output json \
+  -y \
+  "
+  echo junod tx wasm execute $CONTRACT_ADDR "$msg" "$flags"
+  response=$(junod tx wasm execute "$CONTRACT_ADDR" "$msg" $flags)
+  echo $response | ./bin/utils/base64-decode-attributes | jq
+}
+
 delegate() {
   sender=$1
   growth_amount=$2
@@ -51,6 +71,7 @@ delegate() {
   -y \
   "
   echo junod tx wasm execute $CONTRACT_ADDR "$msg" "$flags"
+  junod tx wasm execute juno1j0a9ymgngasfn3l5me8qpd53l5zlm9wurfdk7r65s5mg6tkxal3qpgf5se '{"increase_allowance":{"spender":"'$CONTRACT_ADDR'","amount":"'$growth_amount'"}}' $flags
   response=$(junod tx wasm execute "$CONTRACT_ADDR" "$msg" $flags)
   echo $response | ./bin/utils/base64-decode-attributes | jq
 }
@@ -69,7 +90,10 @@ echo "executing $CMD for $CONTRACT_ADDR"
 
 case $CMD in
   delegate)
-    delegate $1 1000000000 500000000
+    delegate $1 500000000000 0
+    ;;
+  set-client)
+    set-client $1 $2
     ;;
   query-select) 
     query-select

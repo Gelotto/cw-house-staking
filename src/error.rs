@@ -12,6 +12,9 @@ pub enum ContractError {
   #[error("InvalidAddress")]
   InvalidAddress {},
 
+  #[error("NotFound")]
+  NotFound {},
+
   #[error("NotAuthorized")]
   NotAuthorized {},
 

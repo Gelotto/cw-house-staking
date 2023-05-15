@@ -2,7 +2,7 @@ use cosmwasm_schema::cw_serde;
 use cosmwasm_std::{Addr, Uint128};
 use cw_lib::models::{Owner, Token};
 
-use crate::models::Snapshot;
+use crate::models::{ClientAccount, Snapshot};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -33,6 +33,9 @@ pub enum ExecuteMsg {
 
 #[cw_serde]
 pub enum QueryMsg {
+  Client {
+    address: Addr,
+  },
   Select {
     fields: Option<Vec<String>>,
     wallet: Option<Addr>,
@@ -74,4 +77,9 @@ pub struct SelectResponse {
   pub pools: Option<PoolsView>,
   pub account: Option<AccountView>,
   pub stats: Option<StatsView>,
+}
+
+#[cw_serde]
+pub struct ClientResponse {
+  pub client: ClientAccount,
 }
